@@ -1,5 +1,10 @@
 const axios = require('axios')
+const { ConcurrencyManager } = require('axios-concurrency')
+const FormData = require('form-data')
 const csv = require('csvtojson')
+const async = require('async')
+const request = require('request')
+const ProgressBar = require('progress')
 const chalk = require('chalk')
 const path = require('path')
 const config = require('./config.js')
@@ -7,12 +12,8 @@ const inquirer = require('inquirer')
 const fs = require('fs')
 const ext = '.csv'
 
-//TODO
-//Polling?
-
-const pConfig = {
-  header: true
-}
+const MAX_CONCURRENT_REQUESTS = 3
+const manager = ConcurrencyManager(axios, MAX_CONCURRENT_REQUESTS)
 
 const fileList = fs.readdirSync("./", (err,files) => { return files })
 
@@ -20,16 +21,16 @@ const filteredList = fileList.filter(file => {
   return path.extname(file).toLowerCase() === ext
 })
 
-function triggerExport (answers,course) {
-  return axios
-  .post(`https://${answers.domain}.instructure.com/api/v1/courses/${course.canvas_course_id}/content_exports`,{
-    headers: {
-      "Authorization": `Bearer ${config.token}`
-    }
-  })
-  .then(response => {
-    return response
-  })
+function formatBytes(bytes, decimals = 2) {
+  if (bytes === 0) return '0 Bytes';
+
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
 class Downloader {
@@ -78,17 +79,36 @@ class Downloader {
   }
 }
 
-function getUrls () {
-  //this function will be used to get all the most recent download URLs from a canvas course
-  //make sure to build in handling for courses that don't have a recent export generated
+function triggerExport (answers,course) {
+
   axios
+  .post(`https://${answers.domain}.instructure.com/api/v1/courses/${course.canvas_course_id}/content_exports?export_type=common_cartridge&skip_notifications=true`,{},{
+    headers: {
+      'Authorization': `Bearer ${config.token}`
+    },
+  })
+  .then( response => {
+    console.log("Export generated for " + course.canvas_course_id)
+  })
+  .catch( e => {
+    console.error(e)
+  })
+}
+
+function getUrls (answers, course) {
+  // this function will be used to get all the most recent download URLs from a canvas course
+  return axios
       .get(`https://${answers.domain}.instructure.com/api/v1/courses/${course.canvas_course_id}/content_exports`,{
         headers: {
           "Authorization": `Bearer ${config.token}`
         }
       })
       .then(response => {
-        console.log(response)
+        data = {
+          url: response.data[0].attachment.url,
+          name: response.data[0].attachment.filename
+        }
+        return data
       })
 }
 
@@ -113,24 +133,25 @@ inquirer
     }
   ])
   .then(async answers => {
-    const courses = await csv().fromFile(`./${answers.filePath}`)
-    if (answers.choice === "Trigger exports") {
-    const courseData = courses.map(async (course, index) => {
-      try {
-        triggerExport(course)
-      } catch (e) {
-        console.error(e)
-      }
-    })
-  } else {
-    const courseData = courses.map(async (course, index)  => {
-
-      urlList
-
-      try {
-        const dl = new Downloader();
-        dl.downloadFiles(urlList)
-      }
-    })
-  }
+    try {
+      const courses = await csv().fromFile(`./${answers.filePath}`)
+      if (answers.choice === "Trigger exports") {
+      const courseData = courses.map( course => {
+          triggerExport(answers, course)
+      })
+      console.log("Exports are being generated for " + courseData.length + "courses")
+    } else {
+      let data = await Promise.all( courses.map(async course => {
+          attachmentData = await getUrls(answers, course)
+          return {
+            url: await attachmentData.url,
+            name: await attachmentData.name
+          }
+      }))
+      const dl = new Downloader();
+      dl.downloadFiles(data)
+    }
+    } catch (e) {
+      console.error(e)
+    }
   })
