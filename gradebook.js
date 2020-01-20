@@ -77,7 +77,7 @@ class Downloader {
           })
       })
       // console.log(link.name)
-      file.pipe(fs.createWriteStream(link.name))
+      file.pipe(fs.createWriteStream(`./${link.folder}/${link.name}`))
   }
 }
 
@@ -107,7 +107,29 @@ inquirer
   ])
   .then(async answers => {
     try{
-      const courses = await csv().fromFile(`./${answers.filePath}`);
+      const list = await csv().fromFile(`./${answers.filePath}`);
+
+      let courses = await Promise.all(list.map(async course => {
+        return axios.get(`https://${answers.domain}.instructure.com/api/v1/courses/${course.canvas_course_id}`,{
+          headers: {
+            "Authorization": `Bearer ${config.token}`
+          }
+        })
+        .then(response => {
+          if (response.data.sis_course_id !== null || "") {
+            return {
+              name: response.data.sis_course_id,
+              canvas_course_id: course.canvas_course_id
+              }
+            } else {
+              return {
+                name: response.data.name,
+                canvas_course_id: course.canvas_course_id
+              }
+            }
+        })
+      }));
+
 
       (async function main(){
         const browser = await puppeteer.launch({
@@ -145,7 +167,8 @@ inquirer
             })
             responseObj = {
               attachment_id: responseText.attachment_id,
-              course: course.canvas_course_id
+              course: course.canvas_course_id,
+              folder: course.name
             }
             files.push(responseObj)
             await page.waitFor(250)
@@ -174,7 +197,8 @@ inquirer
             console.log("working")
             return {
               url:  response.data.url,
-              name: response.data.filename
+              name: response.data.filename,
+              folder: file.folder
             }
           })
         }))

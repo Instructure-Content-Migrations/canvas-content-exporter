@@ -11,6 +11,7 @@
     "csvtojson": "^2.0.10",
     "form-data": "^3.0.0",
     "inquirer": "^7.0.2",
+    "mkdirp": "^0.5.1",
     "progress": "^2.0.3",
     "puppeteer": "^2.0.0",
     "queue": "^6.0.1",
