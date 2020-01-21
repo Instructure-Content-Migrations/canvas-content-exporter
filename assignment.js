@@ -15,10 +15,13 @@ const request = require('request')
 const ProgressBar = require('progress')
 const chalk = require('chalk')
 const path = require('path')
+const mkdirp = require('mkdirp')
+const AdmZip = require('adm-zip')
 const config = require('./config.js')
 const inquirer = require('inquirer')
 const fs = require('fs')
 const ext = '.csv'
+
 
 const puppeteer = require("puppeteer")
 
@@ -110,7 +113,9 @@ inquirer
     {
       type: "password",
       name: "canvasPass",
-      message: "Enter your Instructure password (This is never saved)"
+      message: "Enter your Instructure password (This is never saved)",
+      mask: "•"
+
     }
   ])
   .then(async answers => {
@@ -171,28 +176,21 @@ inquirer
             .then(response =>{
               return response.data
             })
-            console.log(assignments)
             for (let assignment of assignments) {
-              if (assignment.has_submitted_submissions === false) {continue}
-              else {
+              if ('has_submitted_submissions' in assignment && assignment.has_submitted_submissions == true) {
                 mkdirp(`./${course.name}/${assignment.name}`, e => {
                   if (e) console.error(e)
-                  else console.log(`Folder: ${course.name} created!`)
+                  else console.log(`Folder: ${assignment.name} created!`)
                 })
-                await page.goto(`https://${answers.domain}.instructure.com/courses/${course.canvas_course_id}/assignments/${assignment.id}/`)
+                console.log("going to new page")
+                await page.goto(assignment.submissions_download_url,{ waitUntil: 'networkidle0' })
                 await page.waitFor(2000)
                 cdp = await page.target().createCDPSession()
                 await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: `./${course.name}/${assignment.name}`});
                 await page.click('a[id=download_submission_button]')
-                filename = page.on('response', response => {
-                  if (response.data.filename !== null || "" || undefined) {
-                    return response.data.filename
-                  }
-                })
-                await cdp.send('Network.enable')
-
-                // await page.waitForSelector('#download_submissions_dialog > div.status_box > span', { visible: true, timeout: 0 });
-                await page.waitFor(100000)
+                await page.waitFor(15000)
+              } else {
+                continue
               }
             }
           } catch (e) {

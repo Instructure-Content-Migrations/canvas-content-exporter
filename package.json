@@ -4,6 +4,7 @@
   "description": "This script handles exporting Canvas export packages, Canvas gradebook exports, and Canvas quiz and assignment exports from the command line and bundles everything into a neat package.",
   "main": "index.js",
   "dependencies": {
+    "adm-zip": "^0.4.13",
     "async": "^3.1.0",
     "axios": "^0.19.0",
     "axios-concurrency": "^1.0.3",
